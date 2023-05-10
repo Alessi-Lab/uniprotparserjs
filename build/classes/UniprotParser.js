@@ -25,8 +25,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Accession = exports.Parser = void 0;
 const axios_1 = __importDefault(require("axios"));
 const cross_fetch_1 = __importDefault(require("cross-fetch"));
+const axios_retry_1 = __importDefault(require("axios-retry"));
 const defaultColumns = `accession,id,gene_names,protein_name,organism_name,organism_id,length,xref_refseq,xref_geneid,xref_ensembl,go_id,go_p,go_c,go_f,cc_subcellular_location,ft_topo_dom,ft_carbohyd,mass,cc_mass_spectrometry,sequence,ft_var_seq,cc_alternative_products`;
-const accRegex = /([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})(-\d+)?/g;
+const accRegex = /([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})(-\d+)?/;
 const baseUrl = "https://rest.uniprot.org/idmapping/run";
 const checkStatusUrl = "https://rest.uniprot.org/idmapping/status/";
 class Parser {
@@ -40,6 +41,14 @@ class Parser {
         this.columns = columns;
         this.includeIsoform = includeIsoform;
         this.format = format;
+        (0, axios_retry_1.default)(axios_1.default, {
+            retries: 3,
+            retryDelay: axios_retry_1.default.exponentialDelay,
+            retryCondition: (error) => {
+                var _a;
+                return ((_a = error.response) === null || _a === void 0 ? void 0 : _a.status) === 500;
+            }
+        });
     }
     parse(ids, segment = 10000) {
         return __asyncGenerator(this, arguments, function* parse_1() {
@@ -52,10 +61,18 @@ class Parser {
                         headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
                         responseType: "json"
                     }));
-                    this.resultUrl.push(new ResultLink(checkStatusUrl + res.data.jobId, this.pollingInterval));
+                    this.resultUrl.push(new ResultLink(checkStatusUrl + res.data.jobId, this.pollingInterval, i));
                 }
                 catch (e) {
                     console.log(e);
+                    if (e.response.status === 500) {
+                        const currentSegment = ids.slice(i, i + segment);
+                        const res = yield __await(axios_1.default.post(baseUrl, "ids=" + currentSegment.join(",") + "&from=UniProtKB_AC-ID&to=UniProtKB", {
+                            headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+                            responseType: "json"
+                        }));
+                        this.resultUrl.push(new ResultLink(checkStatusUrl + res.data.jobId, this.pollingInterval, i));
+                    }
                 }
             }
             try {
@@ -89,7 +106,7 @@ class Parser {
                     _c = _f.value;
                     _d = false;
                     try {
-                        const url = _c;
+                        const { url, segment } = _c;
                         let baseData;
                         baseData = {
                             "format": this.format,
@@ -103,7 +120,7 @@ class Parser {
                         try {
                             const res = yield __await(axios_1.default.get(url + "?" + params.join("&"), { responseType: "text" }));
                             // @ts-ignore
-                            yield yield __await({ data: res.data, total: parseInt(res.headers.get("x-total-results")) }
+                            yield yield __await({ data: res.data, total: parseInt(res.headers.get("x-total-results")), segment: segment }
                             // @ts-ignore
                             );
                             // @ts-ignore
@@ -122,7 +139,7 @@ class Parser {
                                     // @ts-ignore
                                     nextUrl = resNext.headers.get("link");
                                     // @ts-ignore
-                                    yield yield __await({ data: resNext.data, total: parseInt(resNext.headers.get("x-total-results")) });
+                                    yield yield __await({ data: resNext.data, total: parseInt(resNext.headers.get("x-total-results")), segment: segment });
                                     yield __await(new Promise(r => setTimeout(r, 1000)));
                                 }
                             }
@@ -155,11 +172,14 @@ class Parser {
                             console.log("Getting status for " + this.resultUrl[i].url);
                             const res = yield __await((0, cross_fetch_1.default)(this.resultUrl[i].url, { method: "GET", redirect: "manual", headers: { "Accept": "application/json" } }));
                             if (res.status == 303) {
-                                this.resultUrl[i].completed = true;
-                                complete--;
                                 const location = res.headers.get("Location");
                                 if (location) {
-                                    yield yield __await(location);
+                                    if (!location.startsWith(checkStatusUrl)) {
+                                        this.resultUrl[i].completed = true;
+                                        complete--;
+                                        console.log(location);
+                                        yield yield __await({ url: location, segment: this.resultUrl[i].segment });
+                                    }
                                 }
                             }
                             else if (res.status == 400) {
@@ -167,9 +187,15 @@ class Parser {
                             }
                             else {
                                 if (res.status == 200) {
-                                    this.resultUrl[i].completed = true;
-                                    complete--;
-                                    yield yield __await(res.url);
+                                    if (!res.url.startsWith(checkStatusUrl)) {
+                                        this.resultUrl[i].completed = true;
+                                        complete--;
+                                        console.log(res.url);
+                                        yield yield __await({ url: res.url, segment: this.resultUrl[i].segment });
+                                    }
+                                    //this.resultUrl[i].completed = true
+                                    //complete--;
+                                    //yield res.url
                                 }
                                 else {
                                     console.log("Polling again in " + this.resultUrl[i].pollInterval + " seconds");
@@ -190,11 +216,13 @@ class Parser {
 }
 exports.Parser = Parser;
 class ResultLink {
-    constructor(url, pollInterval = 5) {
+    constructor(url, pollInterval = 5, segment = 0) {
         this.completed = false;
         this.pollInterval = 5;
+        this.segment = 0;
         this.url = url;
         this.pollInterval = pollInterval;
+        this.segment = segment;
     }
 }
 class Accession {

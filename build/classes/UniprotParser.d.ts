@@ -13,13 +13,17 @@ export declare class Parser {
         data: string;
         total: number;
     }>;
-    getResultStatus(): AsyncGenerator<string>;
+    getResultStatus(): AsyncGenerator<{
+        url: string;
+        segment: number;
+    }>;
 }
 declare class ResultLink {
     url: string;
     completed: boolean;
     pollInterval: number;
-    constructor(url: string, pollInterval?: number);
+    segment: number;
+    constructor(url: string, pollInterval?: number, segment?: number);
 }
 export declare class Accession {
     rawAcc: string;
