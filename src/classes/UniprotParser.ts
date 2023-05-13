@@ -69,7 +69,7 @@ export class Parser {
         }
     }
 
-    async *getResult(): AsyncGenerator<{data:string, total: number}> {
+    async *getResult(): AsyncGenerator<{data:string, total: number, segment: number}> {
         for await (const {url, segment} of this.getResultStatus()) {
             let baseData: any
             baseData = {

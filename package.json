@@ -1,6 +1,6 @@
 {
   "name": "uniprotparserjs",
-  "version": "1.0.19",
+  "version": "1.0.20",
   "description": "A package to retrieve Uniprot data in tabulated text format from accession ID using the Uniprot REST API.",
   "author": {
     "name": "Toan K. Phung",

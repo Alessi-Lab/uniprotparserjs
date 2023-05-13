@@ -8,10 +8,12 @@ export declare class Parser {
     parse(ids: string[], segment?: number): AsyncGenerator<{
         data: string;
         total: number;
+        segment: number;
     }, void, unknown>;
     getResult(): AsyncGenerator<{
         data: string;
         total: number;
+        segment: number;
     }>;
     getResultStatus(): AsyncGenerator<{
         url: string;
